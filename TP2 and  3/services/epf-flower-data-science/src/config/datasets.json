@@ -1,0 +1,15 @@
+{
+    "iris": {
+      "name": "iris",
+      "url": "https://www.kaggle.com/datasets/uciml/iris"
+    },
+    "driver": {
+      "name": "driver",
+      "url": "https://www.kaggle.com/datasets/rishabhrajsharma/cityride-dataset-rides-data-drivers-data"
+    },
+    "supermarket": {
+      "name": "supermarket",
+      "url": "https://www.kaggle.com/datasets/aditirai2607/super-market-dataset"
+    }
+  }
+  
