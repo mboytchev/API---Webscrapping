@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pathlib import Path
 import opendatasets as od
 from kaggle.api.kaggle_api_extended import KaggleApi
+import pandas as pd
 
 router = APIRouter()
 
@@ -29,19 +30,25 @@ def save_config(config):
     with open(CONFIG_FILE_PATH, "w") as f:
         json.dump(config, f, indent=4)
 
-# Télécharger un dataset à partir de Kaggle en utilisant 'opendatasets' ou l'API Kaggle
 def download_kaggle_dataset(dataset_url: str, destination: str):
     try:
-        api = KaggleApi()
-        api.authenticate()  # Authentification à l'API Kaggle
-
-        # Extraire le nom du dataset à partir de l'URL
-        dataset_name = dataset_url.split('/')[-1]
-
-        # Télécharger le dataset avec 'opendatasets'
+        # Télécharger le dataset
         od.download(dataset_url, destination, force=True)
 
-        return {"message": f"Dataset {dataset_name} téléchargé avec succès dans {destination}."}
+        # Identifier le nom du dataset pour récupérer le fichier CSV
+        dataset_name = dataset_url.split('/')[-1]
+        dataset_path = Path(destination) / dataset_name
+
+        # Chercher le fichier CSV dans le dossier
+        csv_file = next((file for file in dataset_path.glob("*.csv")), None)
+        
+        if csv_file is None:
+            raise HTTPException(status_code=404, detail="Aucun fichier CSV trouvé dans le dataset téléchargé.")
+
+        # Lire le fichier CSV avec pandas
+        df = pd.read_csv(csv_file)
+
+        return df.to_json(orient="records")  # Retourner les données CSV sous forme de JSON
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur lors du téléchargement : {e}")
 
@@ -89,11 +96,10 @@ async def update_dataset(name: str, url: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Route pour télécharger un dataset spécifié
 @router.get("/download-dataset/{dataset_key}")
 def get_dataset(dataset_key: str):
     """
-    Télécharger un dataset spécifié dans le fichier de configuration.
+    Télécharger un dataset spécifié et retourner son contenu CSV.
     """
     try:
         datasets_config = load_config()
@@ -107,7 +113,7 @@ def get_dataset(dataset_key: str):
         if not dataset_url:
             raise HTTPException(status_code=400, detail="URL du dataset manquante dans la configuration.")
 
-        # Télécharger le dataset
+        # Télécharger et retourner le contenu du CSV
         return download_kaggle_dataset(dataset_url, DATA_DIR)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
