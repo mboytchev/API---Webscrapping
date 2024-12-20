@@ -9,14 +9,19 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+import joblib
 
 router = APIRouter()
 
 CONFIG_FILE_PATH = "src/config/datasets.json"
 KAGGLE_CONFIG_PATH = "src/config/kaggle.json"
 DATA_DIR = "src/data"
-INPUT_DIR = "src/data/iris"
-OUTPUT_DIR = "src/data/processed"
+IRIS_DIR = "src/data/iris"
+PROCESSED_DIR = "src/data/processed_data"
+MODEL_DIR = "src/models"
+SPLIT_DATA_DIR = "src/data/split_data"
 
 def check_config_file():
     if not Path(CONFIG_FILE_PATH).exists():
@@ -95,6 +100,12 @@ def split_dataset(file_path: str, test_size: float = 0.2, random_state: int = 42
 
     return {"train": train_data.to_dict(orient="records"), "test": test_data.to_dict(orient="records")}
 
+def load_model_parameters():
+    try:
+        with open('src/config/model_parameters.json', 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du chargement des paramètres du modèle : {e}")
 
 class Dataset(BaseModel):
     name: str
@@ -139,6 +150,7 @@ async def update_dataset(name: str, url: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+#download a dataset from kaggle
 @router.get("/download-dataset/{dataset_key}")
 def get_dataset(dataset_key: str):
     try:
@@ -155,6 +167,7 @@ def get_dataset(dataset_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+#process a dataset
 @router.get("/process-dataset/{dataset_key}")
 def process_dataset_endpoint(dataset_key: str):
     """
@@ -172,14 +185,13 @@ def process_dataset_endpoint(dataset_key: str):
             raise HTTPException(status_code=400, detail="URL du dataset manquante dans la configuration.")
 
         dataset_name = dataset_url.split('/')[-1]
-        raw_file_path = os.path.join(INPUT_DIR, dataset_name + ".csv") 
+        raw_file_path = os.path.join(IRIS_DIR, dataset_name + ".csv") 
 
         if not os.path.exists(raw_file_path):
             raise HTTPException(status_code=404, detail="Le fichier du dataset n'existe pas.")
 
         processed_file_path = os.path.join(
-            r"C:\Users\marti\OneDrive - Fondation EPF\Bureau\5ème_année\Data sources\API---Webscrapping\TP2 and  3\services\epf-flower-data-science\src\data\processed_data", 
-            dataset_name + "_processed.csv"
+            PROCESSED_DIR, dataset_name + "_processed.csv"
         )
 
         processed_file = process_dataset(raw_file_path, processed_file_path)
@@ -189,7 +201,8 @@ def process_dataset_endpoint(dataset_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    
+
+#split a dataset
 @router.get("/split-dataset/{dataset_key}")
 def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_state: int = 42):
     """
@@ -204,20 +217,17 @@ def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_stat
 
         dataset_name = dataset_key + "_processed.csv"
         processed_file_path = os.path.join(
-            r"C:\Users\marti\OneDrive - Fondation EPF\Bureau\5ème_année\Data sources\API---Webscrapping\TP2 and  3\services\epf-flower-data-science\src\data\processed_data", 
-            dataset_name
+            PROCESSED_DIR, dataset_name
         )
 
         if not os.path.exists(processed_file_path):
             raise HTTPException(status_code=404, detail="The dataset has not been processed yet.")
 
         train_file_path = os.path.join(
-            r"C:\Users\marti\OneDrive - Fondation EPF\Bureau\5ème_année\Data sources\API---Webscrapping\TP2 and  3\services\epf-flower-data-science\src\data\split_data", 
-            dataset_key + "_train.csv"
+            SPLIT_DATA_DIR, dataset_key + "_train.csv"
         )
         test_file_path = os.path.join(
-            r"C:\Users\marti\OneDrive - Fondation EPF\Bureau\5ème_année\Data sources\API---Webscrapping\TP2 and  3\services\epf-flower-data-science\src\data\split_data", 
-            dataset_key + "_test.csv"
+            SPLIT_DATA_DIR, dataset_key + "_test.csv"
         )
 
         split_data = split_dataset(processed_file_path, test_size=test_size, random_state=random_state, train_path=train_file_path, test_path=test_file_path)
@@ -231,3 +241,53 @@ def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_stat
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+#train the model
+@router.post("/train-model/{dataset_key}")
+async def train_model(dataset_key: str):
+    """
+    Endpoint to train a classification model and save it in the src/models directory.
+    """
+    try:
+        model_params = load_model_parameters()
+
+        train_file_path = os.path.join(SPLIT_DATA_DIR, f"{dataset_key}_train.csv")
+        test_file_path = os.path.join(SPLIT_DATA_DIR, f"{dataset_key}_test.csv")
+
+        if not os.path.exists(train_file_path) or not os.path.exists(test_file_path):
+            raise HTTPException(status_code=404, detail="Les fichiers de données divisées (train/test) sont introuvables.")
+
+        train_df = pd.read_csv(train_file_path)
+        test_df = pd.read_csv(test_file_path)
+
+        X_train = train_df.drop(columns=["Species"])
+        y_train = train_df["Species"]
+
+        X_test = test_df.drop(columns=["Species"])
+        y_test = test_df["Species"]
+
+        model = LogisticRegression(
+            C=model_params['LogisticRegression']['C'],
+            solver=model_params['LogisticRegression']['solver'],
+            max_iter=model_params['LogisticRegression']['max_iter'],
+            penalty=model_params['LogisticRegression']['penalty'],
+            multi_class=model_params['LogisticRegression']['multi_class']
+        )
+
+        model.fit(X_train, y_train)
+
+        model_file_path = os.path.join(MODEL_DIR, f"{dataset_key}_model.joblib")
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        joblib.dump(model, model_file_path)
+
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+
+        return {
+            "message": "Le modèle a été entraîné et sauvegardé avec succès.",
+            "model_file_path": model_file_path,
+            "accuracy": accuracy
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
