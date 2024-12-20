@@ -1,0 +1,10 @@
+{
+    "LogisticRegression": {
+      "C": 1.0,
+      "solver": "lbfgs",
+      "max_iter": 100,
+      "penalty": "l2",
+      "multi_class": "ovr"
+    }
+  }
+  
