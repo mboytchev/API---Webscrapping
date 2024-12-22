@@ -1,7 +1,7 @@
 import os
 import json
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from pathlib import Path
 import opendatasets as od
 from kaggle.api.kaggle_api_extended import KaggleApi
@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import joblib
+from typing import List, Dict
 
 router = APIRouter()
 
@@ -20,8 +21,9 @@ KAGGLE_CONFIG_PATH = "src/config/kaggle.json"
 DATA_DIR = "src/data"
 IRIS_DIR = "src/data/iris"
 PROCESSED_DIR = "src/data/processed_data"
-MODEL_DIR = "src/models"
+MODEL_DIR = Path("src/models")
 SPLIT_DATA_DIR = "src/data/split_data"
+MODEL_PATH="src/models/iris_model.joblib"
 
 def check_config_file():
     if not Path(CONFIG_FILE_PATH).exists():
@@ -110,6 +112,10 @@ def load_model_parameters():
 class Dataset(BaseModel):
     name: str
     url: str
+
+
+class InputDataList(BaseModel):
+    features : list
 
 #get the stored datasets
 @router.get("/datasets")
@@ -260,10 +266,10 @@ async def train_model(dataset_key: str):
         train_df = pd.read_csv(train_file_path)
         test_df = pd.read_csv(test_file_path)
 
-        X_train = train_df.drop(columns=["Species"])
+        X_train = train_df.drop(columns=["Species","Id"])
         y_train = train_df["Species"]
 
-        X_test = test_df.drop(columns=["Species"])
+        X_test = test_df.drop(columns=["Species","Id"])
         y_test = test_df["Species"]
 
         model = LogisticRegression(
@@ -289,5 +295,23 @@ async def train_model(dataset_key: str):
             "accuracy": accuracy
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/predict/{model_name}")
+async def predict_with_model(input_data: InputDataList):
+    """
+    Endpoint pour effectuer des prédictions avec un modèle entraîné.
+    """
+    try:
+        model = joblib.load(MODEL_PATH)
+
+        input_data = pd.DataFrame([input_data.features]) 
+
+        prediction = model.predict(input_data)
+        print(prediction)
+
+        return {"message": "Prediction successful", "prediction": prediction.tolist()}
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

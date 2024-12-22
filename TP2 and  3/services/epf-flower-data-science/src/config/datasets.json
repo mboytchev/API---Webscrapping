@@ -1,7 +1,10 @@
 {
     "iris": {
-      "name": "iris",
-      "url": "https://www.kaggle.com/datasets/uciml/iris"
+        "name": "iris",
+        "url": "https://www.kaggle.com/datasets/uciml/iris"
+    },
+    "heart": {
+        "name": "heart",
+        "url": "https://www.kaggle.com/datasets/noeyislearning/framingham-heart-study"
     }
-  }
-  
+}
