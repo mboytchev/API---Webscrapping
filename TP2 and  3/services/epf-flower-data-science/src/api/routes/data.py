@@ -13,6 +13,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import joblib
 from typing import List, Dict
+import firebase_admin
+from google.cloud import firestore
+from firebase_admin import firestore
 
 router = APIRouter()
 
@@ -24,6 +27,9 @@ PROCESSED_DIR = "src/data/processed_data"
 MODEL_DIR = Path("src/models")
 SPLIT_DATA_DIR = "src/data/split_data"
 MODEL_PATH="src/models/iris_model.joblib"
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "src/config/apidatasources-firebase.json"
+
 
 def check_config_file():
     if not Path(CONFIG_FILE_PATH).exists():
@@ -315,3 +321,17 @@ async def predict_with_model(input_data: InputDataList):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/parameters")
+async def get_parameters():
+    # Retrieve the parameters document from 
+    db = firestore.Client()
+    doc_ref = db.collection("parameters").document("parameters")
+    doc = doc_ref.get()
+    
+    if doc.exists:
+        # Return the data as a response
+        return doc.to_dict()
+    else:
+        # Return an error message if the document doesn't exist
+        return {"error": "Parameters document not found."}
