@@ -6,5 +6,9 @@
     "heart": {
         "name": "heart",
         "url": "https://www.kaggle.com/datasets/noeyislearning/framingham-heart-study"
+    },
+    "riyadh": {
+        "name": "riyadh",
+        "url": "https://www.kaggle.com/datasets/mohammedalsubaie/riyadh-hotels"
     }
 }
