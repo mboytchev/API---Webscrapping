@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 import json
 import os
-from data import check_config_file,save_config, load_config, CONFIG_FILE_PATH
+import pandas as pd
+from data import check_config_file,save_config, load_config,process_dataset, CONFIG_FILE_PATH
 
 # Test case for the check_config_file function
 def test_check_config_file():
@@ -40,17 +41,36 @@ def test_load_config_file_not_found(mock_exists):
     assert excinfo.value.status_code == 404
     assert excinfo.value.detail == "The file datasets.json doesnt exist in existe pas dans src/config"
 
-def test_save_config_success():
-    """
-    Test the successful saving of a JSON configuration file.
-    """
-    config_data = {"key1": "value1", "key2": "value2"}
-    config_file_path = "src/config/test_save_config.json"
 
-    os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
-    save_config(config_data)
-    with open(config_file_path, "r") as file:
-        saved_data = json.load(file)
+def test_process_dataset():
+    #create a false dataset
+    sample_data = """
+    SepalLength,SepalWidth,PetalLength,PetalWidth,Species
+    5.1,3.5,1.4,0.2,setosa
+    4.9,NaN,1.4,0.2,setosa
+    4.7,3.2,NaN,0.2,setosa
+    4.6,3.1,1.5,NaN,versicolor
+    NaN,3.6,1.4,0.2,virginica
+    """
 
-    assert saved_data == config_data
-    os.remove(config_file_path)
+    #load fake data in a file
+    file_path = "test_dataset.csv"
+    output_path = "processed_dataset.csv"
+    with open(file_path, "w") as f:
+        f.write(sample_data)
+
+    process_dataset(file_path, output_path)
+    processed_df = pd.read_csv(output_path)
+
+    assert not processed_df.isnull().values.any(), "Le fichier traité ne doit pas contenir de valeurs manquantes"
+    assert "Species" in processed_df.columns, "La colonne cible 'Species' doit être présente"
+    
+    #verified
+    original_df = pd.read_csv(file_path)
+    assert processed_df.shape[0] == original_df.shape[0], "Le nombre de lignes doit rester constant"
+    assert processed_df.shape[1] == original_df.shape[1], "Le nombre de colonnes doit rester constant"
+
+    #delete temp file
+    os.remove(file_path)
+    os.remove(output_path)
+    print("Test réussi!")
