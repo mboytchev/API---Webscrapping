@@ -1,7 +1,7 @@
 import os
 import json
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, RootModel
+from fastapi import APIRouter, HTTPException,Query
+from pydantic import BaseModel
 from pathlib import Path
 import opendatasets as od
 from kaggle.api.kaggle_api_extended import KaggleApi
@@ -12,10 +12,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import joblib
-from typing import List, Dict
-import firebase_admin
+from typing import List, Dict 
 from google.cloud import firestore
 from firebase_admin import firestore
+import google.auth
 
 router = APIRouter()
 
@@ -31,9 +31,10 @@ MODEL_PATH="src/models/iris_model.joblib"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "src/config/apidatasources-firebase.json"
 
 
+
 def check_config_file():
     if not Path(CONFIG_FILE_PATH).exists():
-        raise HTTPException(status_code=404, detail="Le fichier datasets.json n'existe pas dans src/config")
+        raise HTTPException(status_code=404, detail="The file datasets.json doesnt exist in existe pas dans src/config")
 
 def load_config():
     check_config_file()
@@ -46,6 +47,7 @@ def save_config(config):
 
 def download_kaggle_dataset(dataset_url: str, destination: str):
     try:
+
         od.download(dataset_url, destination, force=True)
 
         dataset_name = dataset_url.split('/')[-1]
@@ -53,20 +55,19 @@ def download_kaggle_dataset(dataset_url: str, destination: str):
         csv_file = next((file for file in dataset_path.glob("*.csv")), None)
         
         if csv_file is None:
-            raise HTTPException(status_code=404, detail="Aucun fichier CSV trouvé dans le dataset téléchargé.")
+            raise HTTPException(status_code=404, detail="No CSV file found in the downloaded dataset")
 
         df = pd.read_csv(csv_file)
         if df.empty:
-            raise HTTPException(status_code=404, detail="Le fichier CSV est vide.")
+            raise HTTPException(status_code=404, detail="CSV file is empty")
         json_data = df.to_dict(orient="records")        
         return json_data
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erreur lors du téléchargement et de la conversion en JSON : {e}")
+        raise HTTPException(status_code=400, detail=f"Error during the downloading of CSV filde : {e}")
 
 def process_dataset(file_path: str, output_path: str):
     """
-    Fonction pour traiter un dataset (imputation des valeurs manquantes, normalisation et séparation de la cible).
-    Sauvegarde les résultats dans un fichier CSV.
+    Processing a dataset (imputation of missing values, normalisation and target separation)
     """
     df = pd.read_csv(file_path)
 
@@ -113,7 +114,7 @@ def load_model_parameters():
         with open('src/config/model_parameters.json', 'r') as f:
             return json.load(f)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors du chargement des paramètres du modèle : {e}")
+        raise HTTPException(status_code=500, detail=f"Error during the loading of parameters model : {e}")
 
 class Dataset(BaseModel):
     name: str
@@ -136,11 +137,11 @@ async def add_dataset(name: str, url: str):
     try:
         config = load_config()
         if name in config:
-            raise HTTPException(status_code=400, detail=f"Le dataset '{name}' existe déjà.")
+            raise HTTPException(status_code=400, detail=f"Dataset '{name}' already exists")
         config[name] = {"name": name, "url": url}
         save_config(config)
 
-        return {"message": f"Le dataset '{name}' a été ajouté avec succès."}
+        return {"message": f"Dataset'{name}' has been updated succesfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -150,30 +151,33 @@ async def update_dataset(name: str, url: str):
     try:
         config = load_config()  
         if name not in config:
-            raise HTTPException(status_code=404, detail=f"Le dataset '{name}' n'existe pas.")
+            raise HTTPException(status_code=404, detail=f"dataset '{name}' doesnt exist")
         
         current_url = config[name]["url"]
         if current_url != url:
             config[name]["url"] = url
             save_config(config)
-            return {"message": f"L'URL du dataset '{name}' a été mise à jour avec succès."}
+            return {"message": f"Dataset URL '{name}' updated successfully"}
         else:
-            return {"message": f"L'URL du dataset '{name}' est déjà à jour."}
+            return {"message": f"dataset URL '{name}' already updated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 #download a dataset from kaggle
 @router.get("/download-dataset/{dataset_key}")
 def get_dataset(dataset_key: str):
+    """
+    download a dataset from kaggle
+    """
     try:
         datasets_config = load_config()
         dataset_info = datasets_config.get(dataset_key)
         if not dataset_info:
-            raise HTTPException(status_code=404, detail="Dataset non trouvé dans la configuration.")
+            raise HTTPException(status_code=404, detail="dataset didn't find")
 
         dataset_url = dataset_info.get("url")
         if not dataset_url:
-            raise HTTPException(status_code=400, detail="URL du dataset manquante dans la configuration.")
+            raise HTTPException(status_code=400, detail="Missig URL")
 
         return download_kaggle_dataset(dataset_url, DATA_DIR)
     except Exception as e:
@@ -190,17 +194,17 @@ def process_dataset_endpoint(dataset_key: str):
         dataset_info = datasets_config.get(dataset_key)
 
         if not dataset_info:
-            raise HTTPException(status_code=404, detail="Dataset non trouvé dans la configuration.")
+            raise HTTPException(status_code=404, detail="dataset didn't find")
 
         dataset_url = dataset_info.get("url")
         if not dataset_url:
-            raise HTTPException(status_code=400, detail="URL du dataset manquante dans la configuration.")
+            raise HTTPException(status_code=400, detail="URL missing")
 
         dataset_name = dataset_url.split('/')[-1]
         raw_file_path = os.path.join(IRIS_DIR, dataset_name + ".csv") 
 
         if not os.path.exists(raw_file_path):
-            raise HTTPException(status_code=404, detail="Le fichier du dataset n'existe pas.")
+            raise HTTPException(status_code=404, detail="Dataset file doesn't exist.")
 
         processed_file_path = os.path.join(
             PROCESSED_DIR, dataset_name + "_processed.csv"
@@ -218,14 +222,14 @@ def process_dataset_endpoint(dataset_key: str):
 @router.get("/split-dataset/{dataset_key}")
 def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_state: int = 42):
     """
-    Split the dataset in train and test.
+    Split a dataset in train and test
     """
     try:
         datasets_config = load_config()
         dataset_info = datasets_config.get(dataset_key)
 
         if not dataset_info:
-            raise HTTPException(status_code=404, detail="Dataset non trouvé dans la configuration.")
+            raise HTTPException(status_code=404, detail="dataset didn't find")
 
         dataset_name = dataset_key + "_processed.csv"
         processed_file_path = os.path.join(
@@ -233,7 +237,7 @@ def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_stat
         )
 
         if not os.path.exists(processed_file_path):
-            raise HTTPException(status_code=404, detail="The dataset has not been processed yet.")
+            raise HTTPException(status_code=404, detail="The dataset has not been processed yet")
 
         train_file_path = os.path.join(
             SPLIT_DATA_DIR, dataset_key + "_train.csv"
@@ -245,7 +249,7 @@ def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_stat
         split_data = split_dataset(processed_file_path, test_size=test_size, random_state=random_state, train_path=train_file_path, test_path=test_file_path)
 
         return {
-            "message": "Le dataset a été divisé avec succès.",
+            "message": "Dataset splitted succesfully",
             "train_file_path": train_file_path,
             "test_file_path": test_file_path
         }
@@ -258,7 +262,7 @@ def split_dataset_endpoint(dataset_key: str, test_size: float = 0.2, random_stat
 @router.post("/train-model/{dataset_key}")
 async def train_model(dataset_key: str):
     """
-    Endpoint to train a classification model and save it in the src/models directory.
+    Train a model
     """
     try:
         model_params = load_model_parameters()
@@ -267,7 +271,7 @@ async def train_model(dataset_key: str):
         test_file_path = os.path.join(SPLIT_DATA_DIR, f"{dataset_key}_test.csv")
 
         if not os.path.exists(train_file_path) or not os.path.exists(test_file_path):
-            raise HTTPException(status_code=404, detail="Les fichiers de données divisées (train/test) sont introuvables.")
+            raise HTTPException(status_code=404, detail="files with data splitted (train/test) not found")
 
         train_df = pd.read_csv(train_file_path)
         test_df = pd.read_csv(test_file_path)
@@ -296,7 +300,7 @@ async def train_model(dataset_key: str):
         accuracy = accuracy_score(y_test, y_pred)
 
         return {
-            "message": "Le modèle a été entraîné et sauvegardé avec succès.",
+            "message": "Model has been trained succesfully",
             "model_file_path": model_file_path,
             "accuracy": accuracy
         }
@@ -304,15 +308,17 @@ async def train_model(dataset_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+#get prediction
 @router.post("/predict/{model_name}")
 async def predict_with_model(input_data: InputDataList):
     """
-    Endpoint pour effectuer des prédictions avec un modèle entraîné.
+    Predict with the model train
     """
     try:
         model = joblib.load(MODEL_PATH)
 
-        input_data = pd.DataFrame([input_data.features]) 
+        input_data = pd.DataFrame([
+            input_data.features]) 
 
         prediction = model.predict(input_data)
         print(prediction)
@@ -321,17 +327,42 @@ async def predict_with_model(input_data: InputDataList):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+#get parameters of firestore
 @router.get("/parameters")
 async def get_parameters():
-    # Retrieve the parameters document from 
+    """
+    Retrieve all parameters
+    """
     db = firestore.Client()
     doc_ref = db.collection("parameters").document("parameters")
     doc = doc_ref.get()
     
     if doc.exists:
-        # Return the data as a response
         return doc.to_dict()
     else:
-        # Return an error message if the document doesn't exist
         return {"error": "Parameters document not found."}
+    
+credentials, _ = google.auth.default()
+db = firestore.Client(credentials=credentials)
+
+#create or update parameters
+@router.put("/parameters/")
+async def add_or_update_parameter(
+    key: str = Query(..., description="Parameters to create or update"),
+    value: int = Query(..., description="Parameters value")
+):
+    """
+    Create or update a parameters
+    """
+    try:
+        doc_ref = db.collection("parameters").document("parameters")
+
+        if not doc_ref.get().exists:
+            doc_ref.set({key: value})
+            return {"message": f"parameters created as {key}: {value}."}
+        else:
+            doc_ref.update({key: value})
+            return {"message": f"parameters updated as {key}: {value}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
