@@ -10,5 +10,13 @@
     "riyadh": {
         "name": "riyadh",
         "url": "https://www.kaggle.com/datasets/mohammedalsubaie/riyadh-hotels"
+    },
+    "Tourism": {
+        "name": "Tourism",
+        "url": "https://www.kaggle.com/datasets/bushraqurban/tourism-and-economic-impact"
+    },
+    "uber": {
+        "name": "uber",
+        "url": "https://www.kaggle.com/datasets/denkuznetz/food-delivery-time-prediction1"
     }
 }
